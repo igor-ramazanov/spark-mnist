@@ -1,9 +1,7 @@
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
-import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-import org.apache.spark.ml.feature.{IndexToString, StringIndexer, VectorAssembler}
 import org.apache.spark.ml.linalg.SparseVector
-import org.apache.spark.sql.types._
+import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.sql.{Row, SparkSession}
 
 object Learning {
@@ -11,68 +9,44 @@ object Learning {
     val sparkSession = SparkSession.builder().appName("digits-recognition").master("local[4]").getOrCreate()
     import sparkSession.sqlContext.implicits._
 
-    val transformation: Row => Array[Any] = row => {
-      val label = row.getInt(0)
-      val pixelsVector = row.getAs[SparseVector]("feature")
-      val size = pixelsVector.size
-      val pixels = pixelsVector.indices.zip(pixelsVector.values.map(_.toInt)).toMap
-      val fillPixels = for (i <- 0 until size) yield pixels.getOrElse(i, 0)
-      Array(label, fillPixels: _*)
+    val transformation = (row: Row) => {
+      val label = row.getDouble(0).toInt
+      val pixelsVector = row.getAs[SparseVector](1)
+      val size = 784
+      val pixels = pixelsVector.indices.zip(pixelsVector.values).toMap
+      val fillPixels = for (i <- 0 until size) yield pixels.getOrElse(i, 0.0)
+      (label, new SparseVector(size, (0 until 784).toArray, fillPixels.toArray))
     }
 
-    val featureLabels = for (i <- 0 until 784) yield s"pixel$i"
-
-    val training = sparkSession.sqlContext.read.format("libsvm").load("res/mnist")
-      .transform(dataset => {
-        val schema = StructType({
-          for (i <- 0 until 784)
-            yield StructField(
-              featureLabels(i),
-              IntegerType,
-              nullable = false,
-              Metadata.empty
-            )})
-        
-      })
-    val testing = sparkSession.sqlContext.read.format("libsvm").load("res/mnist.t")
+    val training = sparkSession.sqlContext.read.format("libsvm").load("res/mnist").rdd.map(transformation).toDF("label", "features")
+    val testing = sparkSession.sqlContext.read.format("libsvm").load("res/mnist.t").rdd.map(transformation).toDF("label", "features")
 
     training.cache()
     testing.cache()
 
-    val assembler = { new VectorAssembler()
-      .setInputCols(featureLabels.toArray)
-    }
-    val stringIndexer = { new StringIndexer()
-      .setInputCol("label")
-      .fit(training)
-    }
-    val mlp = { new MultilayerPerceptronClassifier()
-      .setLabelCol(stringIndexer.getOutputCol)
-      .setFeaturesCol(assembler.getOutputCol)
-      .setLayers(Array(784, 784, 800, 10))
-      .setSeed(42L)
-      .setBlockSize(128)
-      .setMaxIter(10000)
-      .setTol(1e-7)
-    }
-    val indexToString = { new IndexToString()
-      .setInputCol(mlp.getPredictionCol)
-      .setLabels(stringIndexer.labels)
+    val mlp = {
+      new MultilayerPerceptronClassifier()
+        .setLabelCol("label")
+        .setFeaturesCol("features")
+        .setLayers(Array(784, 784, 800, 10))
+        .setSeed(42L)
+        .setBlockSize(128)
+        .setMaxIter(10000)
+        .setTol(1e-7)
     }
 
-    val pipeline = { new Pipeline()
-      .setStages(Array(assembler, stringIndexer, mlp, indexToString))
+    val pipeline = {
+      new Pipeline()
+        .setStages(Array(mlp))
     }
 
     val model = pipeline.fit(training)
+    model.write.overwrite().save("res/model")
     val result = model.transform(testing)
+    val predictionAndLabels = result.map(row => (row.getAs[Double]("prediction"), row.getAs[Int]("label").toDouble)).rdd
+    val metrics = new MulticlassMetrics(predictionAndLabels)
+    val accuracy = metrics.accuracy
 
-    val evaluator = { new MulticlassClassificationEvaluator()
-      .setLabelCol(stringIndexer.getOutputCol)
-      .setPredictionCol(mlp.getPredictionCol)
-      .setMetricName("precision")
-    }
-    val precision = evaluator.evaluate(result)
-    println(s"Precision: $precision")
+    println(s"Precision: $accuracy")
   }
 }
