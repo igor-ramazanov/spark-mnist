@@ -41,7 +41,6 @@ object Learning {
     }
 
     val model = pipeline.fit(training)
-    model.write.overwrite().save("res/model")
     val result = model.transform(testing)
     val predictionAndLabels = result.map(row => (row.getAs[Double]("prediction"), row.getAs[Int]("label").toDouble)).rdd
     val metrics = new MulticlassMetrics(predictionAndLabels)
