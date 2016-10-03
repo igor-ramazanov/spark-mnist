@@ -1,24 +1,18 @@
-import java.io.{BufferedWriter, File, FileOutputStream, FileWriter}
-import java.nio.file.Files
+import java.io.{BufferedWriter, File, FileWriter}
 import javax.imageio.ImageIO
 
 import org.apache.spark.ml.PipelineModel
-import org.apache.spark.ml.linalg.SparseVector
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.util.MLUtils
-import org.apache.spark.sql.types.{DataType, Metadata, StructField, StructType}
-import org.apache.spark.sql.{Row, RowFactory, SparkSession}
+import org.apache.spark.sql.SparkSession
 
-import scala.io.StdIn
-import scala.collection.JavaConversions._
 import scala.collection.immutable.IndexedSeq
+import scala.io.StdIn
 
 object Testing {
   def main(args: Array[String]): Unit = {
     val sparkSession = SparkSession.builder().appName("digits-recognition").master("local[4]").getOrCreate()
-    val model = PipelineModel.load("res/model")
-
-    import sparkSession.implicits._
+    println("Type the path to the prediction model")
+    val predictionModelPath = StdIn.readLine()
+    val model = PipelineModel.load(predictionModelPath)
 
     while (true) {
       println("Type the path to the image:")
