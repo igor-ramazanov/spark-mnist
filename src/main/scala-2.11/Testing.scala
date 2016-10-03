@@ -3,10 +3,11 @@ import java.nio.file.Files
 import javax.imageio.ImageIO
 
 import org.apache.spark.ml.PipelineModel
+import org.apache.spark.ml.linalg.SparseVector
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.sql.types.{DataType, Metadata, StructField, StructType}
-import org.apache.spark.sql.{RowFactory, SparkSession}
+import org.apache.spark.sql.{Row, RowFactory, SparkSession}
 
 import scala.io.StdIn
 import scala.collection.JavaConversions._
@@ -31,16 +32,16 @@ object Testing {
       } yield image.getRGB(x, y)
 
       val a: IndexedSeq[(Int, Int, Int)] = pixels.map(c => (
-        (0xff0000 & c) >>> 16,
-        (0x00ff00 & c) >>> 8,
-        0x0000ff & c
+        255 - ((0xff0000 & c) >>> 16),
+        255 - ((0x00ff00 & c) >>> 8),
+        255 - (0x0000ff & c)
         ))
 
       val roundedPixels = a.map {
         case (r, g, b) => (r + g + b) / 3
       }
 
-      val string = roundedPixels.zipWithIndex.filter(c => c._1 != 0).map(p => s"${p._2 + 1}:${p._1}").mkString(" ")
+      val string = roundedPixels.zipWithIndex.map(p => s"${p._2 + 1}:${p._1}").mkString(" ")
       val libSvmPath = path + ".libsvm"
       val writer = new BufferedWriter(new FileWriter(libSvmPath, false))
       writer.write("1 " + string)
