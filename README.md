@@ -1,0 +1,1 @@
+Small machine learning program for MNIST task done by Spark framework with neural networks algorithms.
